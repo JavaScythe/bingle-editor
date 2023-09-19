@@ -8,37 +8,30 @@ let state = {
     commandHistory: [],
     commandHistoryIndex: 0,
     testText: [
-        "provide a text editor ",
-        "that is not vim ",
-        "or emacs ",
-        "or nano ",
-        "or pico ",
-        "or ed ",
-        "or cat ",
-        "or echo ",
-        "or printf ",
-        "or sed ",
-        "or awk ",
-        "or grep ",
-        "or less ",
-        "or more ",
-        "or head ",
-        "or tail ",
-        "or cut ",
-        "or paste ",
-        "or sort ",
-        "or uniq ",
-        "or tr ",
-        "or wc ",
-        "or tee ",
-        "or touch ",
-        "grubby super amongus potion grubby super amongus potion grubby super amongus potion grubby super amongus potion ",
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. ",
+        "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. ",
+        "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. ",
+        "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. ",
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. ",
+        "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. ",
+        "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. ",
+        "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. "
     ],
     cursorMode: "single",
     cursorX: 0,
     cursorY: 0,
     targetX: null,
-    fileY: 10,
+    fileY: 0,
+    findText: "",
+    findIndex: 0
+}
+
+let config;
+try{
+    config = JSON.parse(fs.readFileSync(process.env.HOME+ "/.config/bingle-editor/config.json", "utf8"));  
+}catch(e){
+    console.error("failed to parse config\n", e);
+    process.exit();
 }
 function termBug(){
     return {
@@ -102,7 +95,7 @@ function paintUi(){
     for(let i = 0; i < y - 4; i++){
         if(state.testText[i+state.fileY]){
             let line = state.testText[i+state.fileY];
-            if(i == state.cursorY && state.cursorMode == "single"){
+            if(i == state.cursorY- state.fileY && state.cursorMode == "single"){
                 //highlight the character by inserting highlight codes around it
                 leftBorder += left + line.slice(0, state.cursorX) + '\x1b[30;47m' + line[state.cursorX] + '\x1b[0m' + line.slice(state.cursorX+1) + spaceGen(bug.x-line.length-2) + right;
             } else {
@@ -116,9 +109,7 @@ function paintUi(){
     let ui = topBorder + lineBreak + leftBorder + bottomBorder;
     process.stdout.write(ui);
 }
-
-paintUi();
-const approved = ["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z","0","1","2","3","4","5","6","7","8","9"," ","."];
+const approved = ["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z","0","1","2","3","4","5","6","7","8","9"," ",".","/"];
 let commands = [
     ":q",
     ":help",
@@ -139,7 +130,7 @@ stdin.on('data', key => {
         }
         state.commandResponse = "";
         paintUi();
-    } else if(key === '\r'){
+    } else if(key === '\r' && state.commandPartial.length > 0){
         if(state.commandStem.length > 0){
             state.commandStem = "";
             state.commandFillIndex = 0;
@@ -154,26 +145,61 @@ stdin.on('data', key => {
         }
         if(state.commandPartial == ":help"){
             state.commandResponse = "bro check manpage or something";
-            state.commandResponseTimeout = setTimeout(() => {
-                state.commandResponse = "";
-                paintUi();
-            }, 1500);
         }
         if(state.commandPartial == ":left"){
             moveCursorByWords('left');
             state.commandResponse = "done";
-            state.commandResponseTimeout = setTimeout(() => {
-                state.commandResponse = "";
-                paintUi();
-            }, 1500);
         }
         if(state.commandPartial == ":right"){
             moveCursorByWords('right');
             state.commandResponse = "done";
-            state.commandResponseTimeout = setTimeout(() => {
-                state.commandResponse = "";
-                paintUi();
-            }, 1500);
+        }
+        if(state.commandPartial == ":close"){
+            state.testText = [];
+            state.commandResponse = "closed file";
+        }
+        if(state.commandPartial.startsWith(":find ") && state.commandPartial.length > 6){
+            state.findText = state.commandPartial.split(" ")[1];
+            let findIndex = -1;
+            let xFindIndex = -1;
+            for(let i = 0; i < state.testText.length; i++){
+                if(state.testText[i].includes(state.findText)){
+                    findIndex = i;
+                    xFindIndex = state.testText[i].indexOf(state.findText)+state.findText.length;
+                    break;
+                }
+            }
+            if(findIndex == -1){
+                state.commandResponse = "not found";
+            } else {
+                state.cursorY = findIndex;
+                state.cursorX = xFindIndex;
+                state.findIndex = 1;
+                appearHook();
+                state.commandResponse = "found";
+            }
+        }
+        if(state.commandPartial == ":find"){
+            let lFindIndex = 0;
+            for(let i=0; i < state.testText.length; i++){
+                if(state.testText[i].includes(state.findText)){
+                    if(lFindIndex < state.findIndex){
+                        lFindIndex++;
+                        continue;
+                    } else if(lFindIndex == state.findIndex){    
+                        state.cursorY = i;
+                        state.cursorX = state.testText[i].indexOf(state.findText)+state.findText.length;
+                        state.findIndex++;
+                        break;
+                    }
+                }
+            }
+            if(lFindIndex == state.findIndex){
+                state.commandResponse = "no more";
+            } else {
+                appearHook();
+                state.commandResponse = "found";
+            }
         }
         if(state.commandPartial.startsWith(":open ")){
             let filename = state.commandPartial.split(" ")[1];
@@ -183,13 +209,15 @@ stdin.on('data', key => {
                 state.testText[i] = state.testText[i]+" ";
             }
             state.commandResponse = "opened file";
+        }
+        state.commandHistory.push(state.commandPartial);
+        state.commandPartial = "";
+        if(state.commandResponse.length > 0){
             state.commandResponseTimeout = setTimeout(() => {
                 state.commandResponse = "";
                 paintUi();
             }, 1500);
         }
-        state.commandHistory.push(state.commandPartial);
-        state.commandPartial = "";
         state.commandHistoryIndex = state.commandHistory.length;
         paintUi();
         //if key is not backspace
@@ -228,6 +256,7 @@ stdin.on('data', key => {
                 state.cursorX = Math.min(state.targetX, state.testText[state.cursorY].length - 1);
             }
         }
+        appearHook();
         paintUi();
     } else if (state.commandPartial.length == 0 && key == '\u001b[B') {
         if (state.cursorY < state.testText.length - 1) {
@@ -239,29 +268,79 @@ stdin.on('data', key => {
                 state.cursorX = Math.min(state.targetX, state.testText[state.cursorY].length - 1);
             }
         }
+        appearHook();
         paintUi();
     } else if (state.commandPartial.length == 0 && key == '\u001b[D') {
         state.targetX = null;
         if (state.cursorX > 0) {
             state.cursorX -= 1;
         }
+        appearHook();
         paintUi();
     } else if (state.commandPartial.length == 0 && key == '\u001b[C') {
         state.targetX = null;
         if (state.cursorX < state.testText[state.cursorY].length - 1) {
             state.cursorX += 1;
         }
+        appearHook();
         paintUi();
     } else if (state.commandPartial.length == 0 && key == '\u001b[1;5D') {
         moveCursorByWords('left');
     } else if(state.commandPartial.length == 0 && key == '\u001b[1;5C'){
         moveCursorByWords('right');
+    } else if(state.commandPartial.length == 0 && key == '\u001b[1;5A'){
+        state.fileY-=1;
+        paintUi();
+    } else if(state.commandPartial.length == 0 && key == '\u001b[1;5B'){
+        state.fileY+=1;
+        paintUi();
     } else if(state.commandPartial.length > 0 && approved.indexOf(key) > -1) {
         state.commandPartial += key;
         paintUi();
+    } else if(state.commandPartial.length == 0 && approved.indexOf(key) > -1){
+        let line = state.testText[state.cursorY];
+        state.testText[state.cursorY] = line.slice(0, state.cursorX) + key + line.slice(state.cursorX);
+        state.cursorX += 1;
+        appearHook();
+        paintUi();
+    } else if(key === '\r' && state.commandPartial.length == 0){
+        //split line at cursor and put second half on next line
+        let line = state.testText[state.cursorY];
+        state.testText[state.cursorY] = line.slice(0, state.cursorX);
+        state.testText.splice(state.cursorY+1, 0, line.slice(state.cursorX));
+        state.cursorY += 1;
+        state.cursorX = 0;
+        appearHook();
+        paintUi();
+    } else if(key === '\u007f' && state.commandPartial.length == 0){
+        if(state.cursorX == 0){
+            //merge lines
+            if(state.cursorY > 0){
+                let line = state.testText[state.cursorY];
+                //remove trailing space of previous line
+                state.testText[state.cursorY-1] = state.testText[state.cursorY-1].slice(0, -1);
+                state.testText.splice(state.cursorY, 1);
+                state.cursorY -= 1;
+                state.cursorX = state.testText[state.cursorY].length;
+                state.testText[state.cursorY] += line;
+                
+            }
+        } else {
+            let line = state.testText[state.cursorY];
+            state.testText[state.cursorY] = line.slice(0, state.cursorX-1) + line.slice(state.cursorX);
+            state.cursorX -= 1;
+        }
+        appearHook();
+        paintUi();
     }
 });
-
+function appearHook(){
+    if(state.cursorY < state.fileY){
+        state.fileY = state.cursorY;
+    } else if(state.cursorY > state.fileY + termBug().y - 4){
+        state.fileY = state.cursorY - termBug().y + 4;
+    }
+}
 function moveCursorByWords(direction) {
     const currentLine = state.testText[state.cursorY];
     if (direction === 'left') {
@@ -285,3 +364,12 @@ function moveCursorByWords(direction) {
 }
 //title the process
 process.stdout.write('\x1b]0;bingle-editor\x07');
+if(process.argv[2]){
+    let file = fs.readFileSync(process.argv[2], "utf8");
+    state.testText = file.split("\n");
+    for(let i in state.testText){
+        state.testText[i] = state.testText[i]+" ";
+    }
+    paintUi();
+}
+paintUi();
