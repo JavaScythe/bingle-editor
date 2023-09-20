@@ -8,14 +8,8 @@ let state = {
     commandHistory: [],
     commandHistoryIndex: 0,
     testText: [
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. ",
-        "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. ",
-        "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. ",
-        "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. ",
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. ",
-        "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. ",
-        "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. ",
-        "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. "
+        "welcome to BINGLE EDITOR ",
+        "run :open or :help "
     ],
     cursorMode: "single",
     cursorX: 0,
@@ -23,10 +17,24 @@ let state = {
     targetX: null,
     fileY: 0,
     findText: "",
-    findIndex: 0
+    findIndex: 0,
+    editHistory: [],
+    lastPeek: null
 }
 
 let config;
+if(!fs.existsSync(process.env.HOME+ "/.config/bingle-editor/config.json")){
+    console.log("config not found, creating default config in ~/.config/bingle-editor/config.json");
+    fs.mkdirSync(process.env.HOME+ "/.config/bingle-editor", { recursive: true });
+    fs.writeFileSync(process.env.HOME+ "/.config/bingle-editor/config.json", JSON.stringify({
+        "tabSize": 4,
+        "caseSensitiveFind": true,
+        "ctrlScrollSize": 2,
+        "cursorXOnLineJump": 0,
+        "removeTabSizeOnBackspace": true
+    }));
+    process.exit();
+}
 try{
     config = JSON.parse(fs.readFileSync(process.env.HOME+ "/.config/bingle-editor/config.json", "utf8"));  
 }catch(e){
@@ -109,13 +117,22 @@ function paintUi(){
     let ui = topBorder + lineBreak + leftBorder + bottomBorder;
     process.stdout.write(ui);
 }
-const approved = ["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z","0","1","2","3","4","5","6","7","8","9"," ",".","/"];
+const approved = [
+    "a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z",
+    "A","B","C","D","E","F","G","H","J","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z",
+    "0","1","2","3","4","5","6","7","8","9",
+    " ",".","/"
+];
 let commands = [
     ":q",
     ":help",
     ":open",
     ":close",
     ":left",
+    ":right",
+    ":find",
+    ":peek",
+    ":line"
 ];
 const stdin = process.stdin;
 stdin.setRawMode(true);
@@ -201,6 +218,24 @@ stdin.on('data', key => {
                 state.commandResponse = "found";
             }
         }
+        if(state.commandPartial.startsWith(":peek ") && state.commandPartial.length > 6){
+            let peekLine = state.commandPartial.split(" ")[1];
+            if(!isNaN(peekLine)){
+                state.fileY = parseInt(peekLine);
+                state.lastPeek = parseInt(peekLine);
+                state.commandResponse = "moved";
+            } else {
+                state.commandResponse = "not a number";
+            }
+        }
+        if(state.commandPartial == ":peek"){
+            if(state.lastPeek != null){
+                state.fileY = state.lastPeek;
+                state.commandResponse = "moved";
+            } else {
+                state.commandResponse = "no last peek";
+            }
+        }
         if(state.commandPartial.startsWith(":open ")){
             let filename = state.commandPartial.split(" ")[1];
             let file = fs.readFileSync(__dirname + "/" + filename, "utf8");
@@ -209,6 +244,17 @@ stdin.on('data', key => {
                 state.testText[i] = state.testText[i]+" ";
             }
             state.commandResponse = "opened file";
+        }
+        if(state.commandPartial.startsWith(":line ") && state.commandPartial.length > 6){
+            let line = state.commandPartial.split(" ")[1];
+            if(!isNaN(line)){
+                state.cursorY = parseInt(line);
+                state.cursorX = 0;
+                appearHook();
+                state.commandResponse = "moved";
+            } else {
+                state.commandResponse = "not a number";
+            }
         }
         state.commandHistory.push(state.commandPartial);
         state.commandPartial = "";
@@ -274,6 +320,11 @@ stdin.on('data', key => {
         state.targetX = null;
         if (state.cursorX > 0) {
             state.cursorX -= 1;
+        } else {
+            if (state.cursorY > 0) {
+                state.cursorY -= 1;
+                state.cursorX = state.testText[state.cursorY].length - 1;
+            }
         }
         appearHook();
         paintUi();
@@ -281,6 +332,11 @@ stdin.on('data', key => {
         state.targetX = null;
         if (state.cursorX < state.testText[state.cursorY].length - 1) {
             state.cursorX += 1;
+        } else {
+            if (state.cursorY < state.testText.length - 1) {
+                state.cursorY += 1;
+                state.cursorX = 0;
+            }
         }
         appearHook();
         paintUi();
@@ -305,8 +361,15 @@ stdin.on('data', key => {
         paintUi();
     } else if(key === '\r' && state.commandPartial.length == 0){
         //split line at cursor and put second half on next line
+        //if the first half is empty, insert a space
+
         let line = state.testText[state.cursorY];
         state.testText[state.cursorY] = line.slice(0, state.cursorX);
+        if(state.testText[state.cursorY].length == 0){
+            state.testText[state.cursorY] = " ";
+        } else {
+            state.testText[state.cursorY] += " ";
+        }
         state.testText.splice(state.cursorY+1, 0, line.slice(state.cursorX));
         state.cursorY += 1;
         state.cursorX = 0;
@@ -326,10 +389,25 @@ stdin.on('data', key => {
                 
             }
         } else {
-            let line = state.testText[state.cursorY];
-            state.testText[state.cursorY] = line.slice(0, state.cursorX-1) + line.slice(state.cursorX);
-            state.cursorX -= 1;
+            //if 4 spaces back, remove 4 spaces
+            //only if there are only spaces in front of cursor
+            if(state.testText[state.cursorY].slice(state.cursorX-4, state.cursorX) == "    " && state.testText[state.cursorY].slice(0, state.cursorX).replace(/ /g, "").length == 0){
+                let line = state.testText[state.cursorY];
+                state.testText[state.cursorY] = line.slice(0, state.cursorX-4) + line.slice(state.cursorX);
+                state.cursorX -= 4;
+            } else {
+                let line = state.testText[state.cursorY];
+                state.testText[state.cursorY] = line.slice(0, state.cursorX-1) + line.slice(state.cursorX);
+                state.cursorX -= 1;    
+            }
+            
         }
+        appearHook();
+        paintUi();
+    } else if(key === '\t' && state.commandPartial.length == 0){
+        let line = state.testText[state.cursorY];
+        state.testText[state.cursorY] = line.slice(0, state.cursorX) + "    " + line.slice(state.cursorX);
+        state.cursorX += 4;
         appearHook();
         paintUi();
     }
