@@ -1,4 +1,4 @@
-const fs = require('fs');
+
 let state = {
     commandPartial: "",
     commandStem: "",
@@ -22,24 +22,12 @@ let state = {
     lastPeek: null
 }
 
-let config;
-if(!fs.existsSync(process.env.HOME+ "/.config/bingle-editor/config.json")){
-    console.log("config not found, creating default config in ~/.config/bingle-editor/config.json");
-    fs.mkdirSync(process.env.HOME+ "/.config/bingle-editor", { recursive: true });
-    fs.writeFileSync(process.env.HOME+ "/.config/bingle-editor/config.json", JSON.stringify({
-        "tabSize": 4,
-        "caseSensitiveFind": true,
-        "ctrlScrollSize": 2,
-        "cursorXOnLineJump": 0,
-        "removeTabSizeOnBackspace": true
-    }));
-    process.exit();
-}
-try{
-    config = JSON.parse(fs.readFileSync(process.env.HOME+ "/.config/bingle-editor/config.json", "utf8"));  
-}catch(e){
-    console.error("failed to parse config\n", e);
-    process.exit();
+let config = {
+    "tabSize": 4,
+    "caseSensitiveFind": true,
+    "ctrlScrollSize": 2,
+    "cursorXOnLineJump": 0,
+    "removeTabSizeOnBackspace": true
 }
 function termBug(){
     return {
@@ -238,12 +226,19 @@ stdin.on('data', key => {
         }
         if(state.commandPartial.startsWith(":open ")){
             let filename = state.commandPartial.split(" ")[1];
-            let file = fs.readFileSync(__dirname + "/" + filename, "utf8");
-            state.testText = file.split("\n");
-            for(let i in state.testText){
-                state.testText[i] = state.testText[i]+" ";
-            }
-            state.commandResponse = "opened file";
+            let file = Bun.file(__dirname + "/" + filename);
+            file.text().then(text => {
+                state.testText = text.split("\n");
+                for(let i in state.testText){
+                    state.testText[i] = state.testText[i]+" ";
+                }
+                state.commandResponse = "opened file";
+                state.commandResponseTimeout = setTimeout(() => {
+                    state.commandResponse = "";
+                    paintUi();
+                }, 1500);
+                paintUi();
+            });
         }
         if(state.commandPartial.startsWith(":line ") && state.commandPartial.length > 6){
             let line = state.commandPartial.split(" ")[1];
@@ -377,10 +372,8 @@ stdin.on('data', key => {
         paintUi();
     } else if(key === '\u007f' && state.commandPartial.length == 0){
         if(state.cursorX == 0){
-            //merge lines
             if(state.cursorY > 0){
                 let line = state.testText[state.cursorY];
-                //remove trailing space of previous line
                 state.testText[state.cursorY-1] = state.testText[state.cursorY-1].slice(0, -1);
                 state.testText.splice(state.cursorY, 1);
                 state.cursorY -= 1;
@@ -389,8 +382,6 @@ stdin.on('data', key => {
                 
             }
         } else {
-            //if 4 spaces back, remove 4 spaces
-            //only if there are only spaces in front of cursor
             if(state.testText[state.cursorY].slice(state.cursorX-4, state.cursorX) == "    " && state.testText[state.cursorY].slice(0, state.cursorX).replace(/ /g, "").length == 0){
                 let line = state.testText[state.cursorY];
                 state.testText[state.cursorY] = line.slice(0, state.cursorX-4) + line.slice(state.cursorX);
@@ -440,14 +431,21 @@ function moveCursorByWords(direction) {
     }
     paintUi();
 }
+process.stdout.on('resize', () => {
+    paintUi();
+});
+
 //title the process
 process.stdout.write('\x1b]0;bingle-editor\x07');
 if(process.argv[2]){
-    let file = fs.readFileSync(process.argv[2], "utf8");
-    state.testText = file.split("\n");
-    for(let i in state.testText){
-        state.testText[i] = state.testText[i]+" ";
-    }
-    paintUi();
+    let file = Bun.file(__dirname + "/" + process.argv[2]);
+    file.text().then(text => {
+        state.testText = text.split("\n");
+        for(let i in state.testText){
+            state.testText[i] = state.testText[i]+" ";
+        }
+        state.commandResponse = "opened file";
+        paintUi();
+    });    
 }
 paintUi();
