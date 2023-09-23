@@ -9,6 +9,11 @@ Intended to bridge vscode and nano.
 - Command system (with autocomplete and history)
 - Syntax highlighting
 - Terminal UI not based on any library (SPEEED)
+- No normalization (good!)
+	- No removing trailing whitespace
+	- No tab/space normalization
+	- No messing with line endings
+	- This is to prevent accidental changes to files
 - Extensible
 - Customizable
 - Open source

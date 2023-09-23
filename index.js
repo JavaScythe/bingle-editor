@@ -1,4 +1,4 @@
-
+const exec = require('child_process').execSync;
 let state = {
     commandPartial: "",
     commandStem: "",
@@ -19,9 +19,19 @@ let state = {
     findText: "",
     findIndex: 0,
     editHistory: [],
-    lastPeek: null
+    lastPeek: null,
+    filenames: [
+        "index.js",
+        "package.json",
+        "README.md",
+        "LICENSE"
+    ]
 }
-
+Array.prototype.insert = function(index) {
+    this.splice.apply(this, [index, 0].concat(
+        Array.prototype.slice.call(arguments, 1)));
+    return this;
+};
 let config = {
     "tabSize": 4,
     "caseSensitiveFind": true,
@@ -42,7 +52,7 @@ function spaceGen(x){
     }
     return s;
 }
-function paintUi(){
+function oldpaintUi(){
     //make border around entire terminal
     process.stdout.write('\u001b[3J\u001b[1J');
     console.clear();
@@ -105,11 +115,80 @@ function paintUi(){
     let ui = topBorder + lineBreak + leftBorder + bottomBorder;
     process.stdout.write(ui);
 }
+function paintUi(){
+    let term = termBug();
+    let terminal = [];
+    //write border and empty space into terminal
+    let border = '═';
+    let topleft = '╔';
+    let bottomleft = '╚';
+    let topright = '╗';
+    let bottomright = '╝';
+    let left = '║';
+    let right = '║';
+    let space = ' ';
+    let tmp = "";
+    for(let y = 0; y < term.y; y++){
+        if(y==0){
+            //TOP BORDER
+            terminal.push(topleft+
+                border.repeat(10)+
+                "bingle-editor"+
+                border.repeat(term.x-25)
+            +topright);
+        } else if(y==term.y-1){
+            //BOTTOM BORDER
+            //show command partial
+            if(state.commandPartial.length > 0){
+                terminal.push(bottomleft+border.repeat(40)+"["+state.commandPartial+"]"+border.repeat((term.x-44)-state.commandPartial.length)+bottomright);
+            } else if(state.commandResponse.length > 0){
+                terminal.push(bottomleft+border.repeat(40)+"["+state.commandResponse+"]"+border.repeat((term.x-44)-state.commandResponse.length)+bottomright); 
+            } else {
+                terminal.push(bottomleft+border.repeat(term.x-2)+bottomright);
+            }
+        } else {
+            //MIDDLE
+            let tmp = "";
+            tmp+=left;
+            let filename = state.filenames[y-1];
+            if(filename == undefined){
+                filename = "";
+            }
+            if(filename.length > (term.x-2)*0.12){
+                filename = filename.slice(0, (term.x-2)*0.12-3)+"...";
+            }
+            tmp+=filename;
+            tmp+=space.repeat(((term.x-2)*0.12)-filename.length);
+            //start gray text
+            tmp+="|\x1b[37m";
+            tmp+=space.repeat(4-y.toString().length);
+            tmp+=y.toString();
+            //end gray text
+            tmp+="\x1b[0m| ";
+            let superstring = state.testText[y-1];
+            if(superstring == undefined){
+                superstring = "";
+            }
+            let realLength = superstring.length;
+            //add cursor highlight
+            if(y-1 == state.cursorY && state.cursorMode == "single"){
+                superstring = superstring.slice(0, state.cursorX) + '\x1b[30;47m' + superstring[state.cursorX] + '\x1b[0m' + superstring.slice(state.cursorX+1);
+            }
+            tmp+=superstring;
+            tmp+=space.repeat(((term.x-2)*0.88)-(6+realLength));
+            tmp+=right;
+            terminal.push(tmp);
+        }
+    }
+    //clear terminal
+    process.stdout.write('\u001b[3J\u001b[1J');
+    process.stdout.write(terminal.join("\n"));
+}
 const approved = [
     "a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z",
     "A","B","C","D","E","F","G","H","J","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z",
     "0","1","2","3","4","5","6","7","8","9",
-    " ",".","/"
+    " ",".","/","!"
 ];
 let commands = [
     ":q",
@@ -401,6 +480,37 @@ stdin.on('data', key => {
         state.cursorX += 4;
         appearHook();
         paintUi();
+    } else if(key == "\u0016"){
+        //paste at cursor
+        let line = state.testText[state.cursorY];
+        let paste = exec('xclip -selection c -o').toString();
+        if(paste.indexOf("\n") > -1){
+            let pastes = paste.split("\n");
+            state.testText[state.cursorY] = line.slice(0, state.cursorX) + pastes[0]+" ";
+            for(let i = 1; i < pastes.length; i++){
+                state.testText.insert(state.cursorY+i, pastes[i].replace(/\r/g, "").replace(/\n/g, "").replace(/\t/g, "    "));
+                if(i==pastes.length-1){
+                    state.testText[state.cursorY+i] +=line.slice(state.cursorX);
+                }
+                state.testText[state.cursorY+i]+= " ";
+            }
+            state.cursorY += pastes.length-1;
+            state.cursorX = pastes[pastes.length-1].length;
+        } else {
+            state.testText[state.cursorY] = line.slice(0, state.cursorX) + paste + line.slice(state.cursorX);
+            state.cursorX += paste.length;
+        }
+        appearHook();
+        paintUi();
+    } else if(key == "{" && state.commandPartial.length == 0){
+        let line = state.testText[state.cursorY];
+        state.testText[state.cursorY] = line.slice(0, state.cursorX) + "{" + line.slice(state.cursorX);
+        state.cursorX += 1;
+        state.testText.insert(state.cursorY+1, spaceGen(config.tabSize)+"}");
+        state.cursorY += 1;
+        state.cursorX = config.tabSize+1;
+        appearHook();
+        paintUi();
     }
 });
 function appearHook(){
@@ -434,7 +544,7 @@ function moveCursorByWords(direction) {
 process.stdout.on('resize', () => {
     paintUi();
 });
-
+//bb
 //title the process
 process.stdout.write('\x1b]0;bingle-editor\x07');
 if(process.argv[2]){
